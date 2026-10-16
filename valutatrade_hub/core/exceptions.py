@@ -23,3 +23,7 @@ class InsufficientFundsError(Exception):
 
 class StorageError(Exception):
     """Не удалось прочитать или сохранить данные проекта."""
+
+
+class AuthenticationError(Exception):
+    """Ошибка входа или попытка выполнить действие без входа."""
