@@ -5,6 +5,10 @@ import hmac
 import secrets
 from datetime import UTC, datetime
 
+from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.exceptions import InsufficientFundsError
+from valutatrade_hub.core.utils import validate_amount
+
 MIN_PASSWORD_LENGTH = 4
 
 
@@ -127,3 +131,45 @@ class User:
             )
         except (KeyError, TypeError, ValueError):
             raise ValueError("Некорректная запись пользователя.") from None
+
+
+class Wallet:
+    """Баланс пользователя в одной валюте."""
+
+    def __init__(self, currency_code, balance=0.0):
+        self._currency_code = get_currency(currency_code).code
+        self.balance = balance
+
+    @property
+    def currency_code(self):
+        """Код валюты кошелька без возможности изменить его."""
+        return self._currency_code
+
+    @property
+    def balance(self):
+        """Текущий баланс."""
+        return self._balance
+
+    @balance.setter
+    def balance(self, value):
+        self._balance = validate_amount(value, allow_zero=True)
+
+    def deposit(self, amount):
+        """Пополнить кошелёк на положительную сумму."""
+        amount = validate_amount(amount)
+        self.balance = self.balance + amount
+
+    def withdraw(self, amount):
+        """Списать сумму, если её хватает на балансе."""
+        amount = validate_amount(amount)
+        if amount > self.balance:
+            raise InsufficientFundsError(self.balance, amount, self.currency_code)
+        self.balance = self.balance - amount
+
+    def get_balance_info(self):
+        """Вернуть строку с валютой и остатком."""
+        return f"{self.currency_code}: {self.balance:.8f}"
+
+    def to_dict(self):
+        """Подготовить данные кошелька для сохранения."""
+        return {"currency_code": self.currency_code, "balance": self.balance}
