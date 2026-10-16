@@ -37,3 +37,10 @@ select = ["E", "F", "I"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.valutatrade]
+data_dir = "data"
+logs_dir = "logs"
+rates_ttl_seconds = 300
+default_base_currency = "USD"
+log_format = "text"

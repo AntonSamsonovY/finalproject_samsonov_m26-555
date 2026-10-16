@@ -19,3 +19,7 @@ class InsufficientFundsError(Exception):
             f"Недостаточно средств: доступно {available} {code}, "
             f"требуется {required} {code}"
         )
+
+
+class StorageError(Exception):
+    """Не удалось прочитать или сохранить данные проекта."""
