@@ -1,7 +1,9 @@
-"""Регистрация пользователей и работа с текущей сессией."""
+"""Регистрация, вход и операции с валютным портфелем."""
 
-from valutatrade_hub.core.exceptions import AuthenticationError
+from valutatrade_hub.core.currencies import get_currency
+from valutatrade_hub.core.exceptions import AuthenticationError, StorageError
 from valutatrade_hub.core.models import Portfolio, User
+from valutatrade_hub.core.utils import validate_amount
 
 
 class AuthService:
@@ -52,3 +54,87 @@ class AuthService:
         if self._current_user is None:
             raise AuthenticationError("Сначала выполните login.")
         return self._current_user.get_user_info()
+
+
+class TradingService:
+    """Работа с кошельками вошедшего пользователя и оценка их стоимости."""
+
+    def __init__(self, database, auth, rates):
+        self._database = database
+        self._auth = auth
+        self._rates = rates
+
+    def _load_portfolio(self):
+        user_id = self._auth.current_user()["user_id"]
+        data = self._database.load()
+        for record in data["users"]:
+            if record["user_id"] == user_id:
+                user = User.from_dict(record)
+                break
+        else:
+            raise AuthenticationError(
+                "Пользователь больше не существует. Войдите снова."
+            )
+        for index, record in enumerate(data["portfolios"]):
+            if record["user_id"] == user_id:
+                return data, index, Portfolio.from_dict(record, user)
+        raise StorageError("Не найден портфель пользователя.")
+
+    def get_rate(self, from_code, to_code):
+        """Получить курс; вход для этой команды не нужен."""
+        left = get_currency(from_code).code
+        right = get_currency(to_code).code
+        return {"from": left, "to": right, **self._rates.get_rate(left, right)}
+
+    def _trade(self, action, currency_code, amount):
+        data, index, portfolio = self._load_portfolio()
+        code = get_currency(currency_code).code
+        amount = validate_amount(amount)
+        if action == "sell":
+            wallet = portfolio.get_wallet(code)
+            wallet.withdraw(amount)
+        else:
+            wallet = portfolio.add_currency(code)
+            wallet.deposit(amount)
+
+        # Изменения пока только в памяти: без свежего курса файл не сохраняем.
+        quote = self._rates.get_rate(code, "USD")
+        estimated_cost = validate_amount(amount * quote["rate"])
+        data["portfolios"][index] = portfolio.to_dict()
+        self._database.save(data)
+        return {
+            "currency": code,
+            "amount": amount,
+            "balance": wallet.balance,
+            "rate": quote["rate"],
+            "estimated_cost": estimated_cost,
+            "base": "USD",
+        }
+
+    def buy(self, currency_code, amount):
+        """Увеличить баланс валюты и показать оценку покупки в USD."""
+        return self._trade("buy", currency_code, amount)
+
+    def sell(self, currency_code, amount):
+        """Уменьшить баланс валюты, не допуская отрицательного остатка."""
+        return self._trade("sell", currency_code, amount)
+
+    def show_portfolio(self, base_currency="USD"):
+        """Оценить все ненулевые кошельки по свежим курсам в выбранной валюте."""
+        _, _, portfolio = self._load_portfolio()
+        base = get_currency(base_currency).code
+        rows = []
+        total = 0.0
+        for code, wallet in sorted(portfolio.wallets.items()):
+            value = 0.0
+            if wallet.balance > 0:
+                rate = self._rates.get_rate(code, base)["rate"]
+                value = validate_amount(wallet.balance * rate)
+            total = validate_amount(total + value, allow_zero=True)
+            rows.append({"currency": code, "balance": wallet.balance, "value": value})
+        return {
+            "username": portfolio.user.username,
+            "base": base,
+            "wallets": rows,
+            "total": total,
+        }
