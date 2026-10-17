@@ -27,3 +27,10 @@ class StorageError(Exception):
 
 class AuthenticationError(Exception):
     """Ошибка входа или попытка выполнить действие без входа."""
+
+
+class ApiRequestError(Exception):
+    """Не удалось получить подходящий курс из кэша или внешнего API."""
+
+    def __init__(self, reason):
+        super().__init__(f"Ошибка при обращении к внешнему API: {reason}")
