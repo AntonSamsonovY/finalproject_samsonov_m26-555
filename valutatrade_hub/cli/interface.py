@@ -17,6 +17,13 @@ from valutatrade_hub.core.rates import RateService
 from valutatrade_hub.core.usecases import AuthService, TradingService
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.parser_service.api_clients import (
+    CoinGeckoClient,
+    ExchangeRateApiClient,
+)
+from valutatrade_hub.parser_service.config import ParserConfig
+from valutatrade_hub.parser_service.storage import RatesStorage
+from valutatrade_hub.parser_service.updater import RatesUpdater
 
 
 class CommandParser(argparse.ArgumentParser):
@@ -46,6 +53,12 @@ def build_parser():
     command = commands.add_parser("get-rate", add_help=False, allow_abbrev=False)
     command.add_argument("--from", dest="from_code", required=True)
     command.add_argument("--to", dest="to_code", required=True)
+    command = commands.add_parser("update-rates", add_help=False, allow_abbrev=False)
+    command.add_argument("--source", choices=("coingecko", "exchangerate"))
+    command = commands.add_parser("show-rates", add_help=False, allow_abbrev=False)
+    command.add_argument("--currency")
+    command.add_argument("--top", type=int)
+    command.add_argument("--base", default="USD")
     return parser
 
 
@@ -58,6 +71,9 @@ def show_help():
     print("  sell --currency <код> --amount <количество> — продать валюту")
     print("  show-portfolio [--base <код>] — кошельки и общая стоимость")
     print("  get-rate --from <код> --to <код> — получить курс")
+    print("  update-rates [--source coingecko|exchangerate] — обновить курсы")
+    print("  show-rates [--currency <код>] [--top <N>] [--base <код>] — кэш курсов")
+    print("  --top показывает самые дорогие из отслеживаемых криптовалют.")
     print("  whoami — текущий пользователь")
     print("  logout — завершить сессию")
     print("  help — справка")
@@ -80,7 +96,50 @@ def print_portfolio(info):
     print(f"Итого: {info['total']:.2f} {info['base']}")
 
 
-def run(service, trading=None, base_currency="USD"):
+def print_rates(info):
+    """Показать сохранённые курсы с явной отметкой об устаревших данных."""
+    if not info["rates"]:
+        print(
+            "В кэше нет подходящих курсов. Выполните update-rates или измените фильтр."
+        )
+        return
+    table = PrettyTable(
+        ["Валюта", f"Курс к {info['base']}", "Получен (UTC)", "Источник", "Статус"]
+    )
+    for row in info["rates"]:
+        table.add_row(
+            [
+                row["currency"],
+                f"{row['rate']:.8f}",
+                row["updated_at"],
+                row["source"],
+                "устарел" if row["stale"] else "актуален",
+            ]
+        )
+    print(table)
+    if any(row["stale"] for row in info["rates"]):
+        print(
+            "Устаревшие курсы показаны для справки. "
+            "Для операций обновите их: update-rates."
+        )
+
+
+def print_update_report(report):
+    """Вывести результат обновления и отдельные ошибки источников."""
+    if report["updated"]:
+        print(f"Обновлено курсов: {report['updated']}. В кэше: {report['cached']}.")
+        print(f"Добавлено в историю: {report['history_added']}.")
+    elif report["sources"]:
+        print(f"Новых курсов нет. В кэше: {report['cached']}.")
+    else:
+        print("Курсы не обновлены.")
+    if report["errors"] and report["sources"]:
+        print("Обновление выполнено частично.")
+    for source, error in report["errors"].items():
+        print(f"Источник {source}: {error}")
+
+
+def run(service, trading=None, base_currency="USD", updater=None, rates=None):
     """Читать команды, передавать их сервисам и показывать результат."""
     print("ValutaTrade Hub")
     show_help()
@@ -125,6 +184,14 @@ def run(service, trading=None, base_currency="USD"):
             elif args.command == "logout":
                 service.logout()
                 print("Сессия завершена.")
+            elif args.command == "update-rates":
+                if updater is None:
+                    raise ValueError("Сервис обновления курсов не подключён.")
+                print_update_report(updater.run_update(args.source))
+            elif args.command == "show-rates":
+                if rates is None:
+                    raise ValueError("Сервис курсов не подключён.")
+                print_rates(rates.list_rates(args.currency, args.top, args.base))
             elif args.command in ("buy", "sell", "show-portfolio", "get-rate"):
                 if trading is None:
                     raise ValueError("Сервис операций с валютами не подключён.")
@@ -165,9 +232,22 @@ def main():
         settings = SettingsLoader()
         database = DatabaseManager(settings.get("data_dir"))
         auth = AuthService(database)
-        rates = RateService(settings.get("data_dir"), settings.get("rates_ttl_seconds"))
+        config = ParserConfig(settings.get("data_dir"))
+        storage = RatesStorage(config)
+        updater = RatesUpdater(
+            {
+                "coingecko": CoinGeckoClient(config),
+                "exchangerate": ExchangeRateApiClient(config),
+            },
+            storage,
+        )
+        rates = RateService(
+            settings.get("data_dir"),
+            settings.get("rates_ttl_seconds"),
+            refresh=updater.run_update,
+        )
         trading = TradingService(database, auth, rates)
-        run(auth, trading, settings.get("default_base_currency"))
+        run(auth, trading, settings.get("default_base_currency"), updater, rates)
     except (ValueError, CurrencyNotFoundError, StorageError) as error:
         print(f"Не удалось запустить приложение: {error}")
         return 1
