@@ -17,6 +17,7 @@ from valutatrade_hub.core.rates import RateService
 from valutatrade_hub.core.usecases import AuthService, TradingService
 from valutatrade_hub.infra.database import DatabaseManager
 from valutatrade_hub.infra.settings import SettingsLoader
+from valutatrade_hub.logging_config import configure_logging
 from valutatrade_hub.parser_service.api_clients import (
     CoinGeckoClient,
     ExchangeRateApiClient,
@@ -48,6 +49,7 @@ def build_parser():
         command = commands.add_parser(name, add_help=False, allow_abbrev=False)
         command.add_argument("--currency", required=True)
         command.add_argument("--amount", required=True, type=float)
+        command.add_argument("--verbose", action="store_true")
     command = commands.add_parser("show-portfolio", add_help=False, allow_abbrev=False)
     command.add_argument("--base")
     command = commands.add_parser("get-rate", add_help=False, allow_abbrev=False)
@@ -69,6 +71,7 @@ def show_help():
     print("  login --username <имя> [--password <пароль>] — вход")
     print("  buy --currency <код> --amount <количество> — купить валюту")
     print("  sell --currency <код> --amount <количество> — продать валюту")
+    print("  --verbose добавляет баланс до и после покупки/продажи в журнал.")
     print("  show-portfolio [--base <код>] — кошельки и общая стоимость")
     print("  get-rate --from <код> --to <код> — получить курс")
     print("  update-rates [--source coingecko|exchangerate] — обновить курсы")
@@ -197,7 +200,7 @@ def run(service, trading=None, base_currency="USD", updater=None, rates=None):
                     raise ValueError("Сервис операций с валютами не подключён.")
                 if args.command in ("buy", "sell"):
                     operation = trading.buy if args.command == "buy" else trading.sell
-                    result = operation(args.currency, args.amount)
+                    result = operation(args.currency, args.amount, verbose=args.verbose)
                     label = "Куплено" if args.command == "buy" else "Продано"
                     print(f"{label}: {result['amount']:.8f} {result['currency']}.")
                     print(f"Оценочная стоимость: {result['estimated_cost']:.2f} USD.")
@@ -230,6 +233,7 @@ def main():
     """Загрузить настройки и запустить консольный интерфейс."""
     try:
         settings = SettingsLoader()
+        configure_logging(settings)
         database = DatabaseManager(settings.get("data_dir"))
         auth = AuthService(database)
         config = ParserConfig(settings.get("data_dir"))

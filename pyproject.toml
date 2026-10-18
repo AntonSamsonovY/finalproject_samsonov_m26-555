@@ -44,3 +44,6 @@ logs_dir = "logs"
 rates_ttl_seconds = 300
 default_base_currency = "USD"
 log_format = "text"
+log_level = "INFO"
+log_max_bytes = 1048576
+log_backup_count = 3

@@ -18,6 +18,9 @@ def test_default_settings(tmp_path):
     assert settings.get("logs_dir") == tmp_path / "logs"
     assert settings.get("rates_ttl_seconds") == 300
     assert settings.get("default_base_currency") == "USD"
+    assert settings.get("log_level") == "INFO"
+    assert settings.get("log_max_bytes") == 1048576
+    assert settings.get("log_backup_count") == 3
     assert settings.get("unknown", "default") == "default"
     assert SettingsLoader() is settings
 
@@ -52,6 +55,11 @@ def test_paths_from_environment(tmp_path, monkeypatch):
         "[tool.valutatrade]\nrates_ttl_seconds = true",
         '[tool.valutatrade]\nlog_format = "unknown"',
         "[tool.valutatrade]\ndata_dir = 123",
+        '[tool.valutatrade]\nlog_level = "invalid"',
+        "[tool.valutatrade]\nlog_max_bytes = 0",
+        "[tool.valutatrade]\nlog_max_bytes = true",
+        "[tool.valutatrade]\nlog_backup_count = -1",
+        "[tool.valutatrade]\nlog_backup_count = 1.5",
     ],
 )
 def test_bad_settings(tmp_path, content):

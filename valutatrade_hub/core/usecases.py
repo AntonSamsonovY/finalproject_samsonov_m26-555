@@ -4,6 +4,7 @@ from valutatrade_hub.core.currencies import get_currency
 from valutatrade_hub.core.exceptions import AuthenticationError, StorageError
 from valutatrade_hub.core.models import Portfolio, User
 from valutatrade_hub.core.utils import validate_amount
+from valutatrade_hub.decorators import log_action
 
 
 class AuthService:
@@ -92,9 +93,11 @@ class TradingService:
         amount = validate_amount(amount)
         if action == "sell":
             wallet = portfolio.get_wallet(code)
+            balance_before = wallet.balance
             wallet.withdraw(amount)
         else:
             wallet = portfolio.add_currency(code)
+            balance_before = wallet.balance
             wallet.deposit(amount)
 
         # Изменения пока только в памяти: без свежего курса файл не сохраняем.
@@ -106,16 +109,19 @@ class TradingService:
             "currency": code,
             "amount": amount,
             "balance": wallet.balance,
+            "balance_before": balance_before,
             "rate": quote["rate"],
             "estimated_cost": estimated_cost,
             "base": "USD",
         }
 
-    def buy(self, currency_code, amount):
+    @log_action
+    def buy(self, currency_code, amount, *, verbose=False):
         """Увеличить баланс валюты и показать оценку покупки в USD."""
         return self._trade("buy", currency_code, amount)
 
-    def sell(self, currency_code, amount):
+    @log_action
+    def sell(self, currency_code, amount, *, verbose=False):
         """Уменьшить баланс валюты, не допуская отрицательного остатка."""
         return self._trade("sell", currency_code, amount)
 

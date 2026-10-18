@@ -37,12 +37,27 @@ class SettingsLoader:
         log_format = config.get("log_format", "text")
         if log_format not in ("text", "json"):
             raise ValueError("Формат логов должен быть text или json.")
+        log_level = config.get("log_level", "INFO")
+        if log_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            raise ValueError(
+                "Уровень логов должен быть DEBUG, INFO, WARNING или ERROR."
+            )
+        log_max_bytes = config.get("log_max_bytes", 1048576)
+        log_backup_count = config.get("log_backup_count", 3)
+        for value in (log_max_bytes, log_backup_count):
+            if type(value) is not int or value <= 0:
+                raise ValueError(
+                    "Размер журнала и число архивов должны быть целыми больше нуля."
+                )
         base = get_currency(config.get("default_base_currency", "USD")).code
 
         self._settings = {
             "rates_ttl_seconds": ttl,
             "default_base_currency": base,
             "log_format": log_format,
+            "log_level": log_level,
+            "log_max_bytes": log_max_bytes,
+            "log_backup_count": log_backup_count,
         }
         for key, env_name, default in (
             ("data_dir", "VALUTATRADE_DATA_DIR", "data"),
