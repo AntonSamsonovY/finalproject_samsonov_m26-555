@@ -107,3 +107,21 @@ def test_duplicate_portfolio_is_rejected(tmp_path):
 def test_invalid_data_shape(tmp_path, record):
     with pytest.raises(StorageError):
         DatabaseManager(tmp_path).save(record)
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "0001-01-01T00:00:00+03:00",
+        "9999-12-31T23:59:59-03:00",
+    ],
+)
+def test_overflowing_date_is_storage_error_without_rewriting_files(tmp_path, timestamp):
+    data = make_data()
+    data["users"][0]["registration_date"] = timestamp
+    save_json(tmp_path / "users.json", data["users"])
+    save_json(tmp_path / "portfolios.json", data["portfolios"])
+    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+    with pytest.raises(StorageError, match="Некорректные данные"):
+        DatabaseManager(tmp_path).load()
+    assert before == {path.name: path.read_bytes() for path in tmp_path.iterdir()}

@@ -35,7 +35,12 @@ class User:
         self._salt = salt
         if registration_date.tzinfo is None:
             registration_date = registration_date.replace(tzinfo=UTC)
-        self._registration_date = registration_date.astimezone(UTC)
+        try:
+            self._registration_date = registration_date.astimezone(UTC)
+        except OverflowError:
+            raise ValueError(
+                "Дата регистрации выходит за допустимые границы."
+            ) from None
 
     @staticmethod
     def _check_password(password):

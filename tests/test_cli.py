@@ -262,3 +262,21 @@ def test_trading_after_process_restart(tmp_path):
         assert not result.stderr
     balance = DatabaseManager(tmp_path).load()["portfolios"][0]["wallets"]["BTC"]
     assert balance["balance"] == pytest.approx(0.06)
+
+
+def test_login_with_overflowing_date_stays_in_command_loop(
+    tmp_path, monkeypatch, capsys
+):
+    database = DatabaseManager(tmp_path)
+    auth = AuthService(database)
+    auth.register("anton", "test-password")
+    data = database.load()
+    data["users"][0]["registration_date"] = "0001-01-01T00:00:00+03:00"
+    save_json(tmp_path / "users.json", data["users"])
+    commands = iter(["login --username anton --password test-password", "exit"])
+    monkeypatch.setattr("builtins.input", lambda _: next(commands))
+    run(auth)
+    output = capsys.readouterr().out
+    assert "Ошибка: Некорректные данные пользователей" in output
+    assert "До свидания" in output
+    assert "Traceback" not in output

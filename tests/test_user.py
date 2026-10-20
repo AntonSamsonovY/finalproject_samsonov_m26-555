@@ -128,3 +128,26 @@ def test_date_without_timezone_is_loaded_as_utc():
     assert User.from_dict(data).registration_date == datetime(
         2026, 10, 16, 12, tzinfo=UTC
     )
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    [
+        "0001-01-01T00:00:00+03:00",
+        "9999-12-31T23:59:59-03:00",
+    ],
+)
+def test_date_overflow_is_value_error(timestamp):
+    user = User.create(1, "anton", "test-password")
+    with pytest.raises(ValueError, match="границы"):
+        User(
+            user.user_id,
+            user.username,
+            user.hashed_password,
+            user.salt,
+            datetime.fromisoformat(timestamp),
+        )
+    data = user.to_dict()
+    data["registration_date"] = timestamp
+    with pytest.raises(ValueError, match="Некорректная запись"):
+        User.from_dict(data)
